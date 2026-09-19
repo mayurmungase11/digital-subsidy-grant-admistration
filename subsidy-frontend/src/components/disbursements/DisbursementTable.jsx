@@ -1,0 +1,7 @@
+function statusClass(status) { return `status-badge status-${String(status || '').toLowerCase().replaceAll('_', '-')}`; }
+function money(value) { return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+
+export default function DisbursementTable({ disbursements, onDelete, deletingId }) {
+  if (disbursements.length === 0) return <div className="empty-state"><strong>No disbursement records found</strong><span>Installments will appear here after Finance creates them.</span></div>;
+  return <div className="table-wrapper"><table className="data-table"><thead><tr><th>ID</th><th>Application</th><th>Installment</th><th>Amount</th><th>Date</th><th>Status</th><th>Transaction</th><th>Actions</th></tr></thead><tbody>{disbursements.map((d) => <tr key={d.id}><td data-label="ID"><strong>#{d.id}</strong></td><td data-label="Application">#{d.applicationId}</td><td data-label="Installment">#{d.installmentNumber}</td><td data-label="Amount">{money(d.amount)}</td><td data-label="Date">{d.disbursementDate ? new Date(d.disbursementDate).toLocaleString('en-IN') : '—'}</td><td data-label="Status"><span className={statusClass(d.status)}>{String(d.status || '').replaceAll('_', ' ')}</span></td><td data-label="Transaction">{d.transactionReference}</td><td data-label="Actions" className="actions-cell"><button type="button" className="danger-text-button" onClick={() => onDelete(d)} disabled={deletingId === d.id}>{deletingId === d.id ? 'Deleting…' : 'Delete'}</button></td></tr>)}</tbody></table></div>;
+}

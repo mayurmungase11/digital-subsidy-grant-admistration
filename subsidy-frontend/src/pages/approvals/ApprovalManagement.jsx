@@ -1,0 +1,31 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { getAllApplications } from '../../api/applicationApi.js';
+import { createApproval, getAllApprovals, updateApproval } from '../../api/approvalApi.js';
+import ApprovalForm from '../../components/approvals/ApprovalForm.jsx';
+import ApprovalTable from '../../components/approvals/ApprovalTable.jsx';
+
+const APPROVAL_ROLES = new Set(['ADMIN', 'DISTRICT_OFFICER']);
+function getApiErrorMessage(error, fallback) { const data = error?.response?.data; if (data?.message) return data.message; if (data?.error && typeof data.error === 'string') return data.error; if (error?.response?.status === 401) return 'Your session has expired. Please sign in again.'; if (error?.response?.status === 403) return 'You do not have permission to perform this action.'; if (error?.response?.status === 404) return 'The application or approval record was not found.'; if (error?.response?.status === 409) return 'An approval record already exists for this application.'; if (error?.response?.status === 400) return 'Please check the approval details and try again.'; return fallback; }
+
+export default function ApprovalManagement() {
+  const { role, userId } = useAuth();
+  const canManage = APPROVAL_ROLES.has(role);
+  const [approvals, setApprovals] = useState([]); const [applications, setApplications] = useState([]); const [loading, setLoading] = useState(true); const [pageError, setPageError] = useState(''); const [actionMessage, setActionMessage] = useState(''); const [search, setSearch] = useState(''); const [formOpen, setFormOpen] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingId, setUpdatingId] = useState(null);
+
+  const loadData = useCallback(async () => { setLoading(true); setPageError(''); try { const [approvalResponse, applicationResponse] = await Promise.all([getAllApprovals(), getAllApplications()]); setApprovals(Array.isArray(approvalResponse.data) ? approvalResponse.data : []); setApplications(Array.isArray(applicationResponse.data) ? applicationResponse.data : []); } catch (error) { setPageError(getApiErrorMessage(error, 'Unable to load approval data.')); } finally { setLoading(false); } }, []);
+  useEffect(() => { loadData(); }, [loadData]);
+  const pendingApplications = useMemo(() => { const ids = new Set(approvals.map((approval) => approval.applicationId)); return applications.filter((application) => application.status === 'VERIFIED' && !ids.has(application.id)); }, [applications, approvals]);
+  const filteredApprovals = useMemo(() => { const q = search.trim().toLowerCase(); if (!q) return approvals; return approvals.filter((approval) => [approval.id, approval.applicationId, approval.approvedById, approval.status, approval.approvedAmount, approval.decisionDate, approval.remarks].filter((x) => x !== null && x !== undefined).some((x) => String(x).toLowerCase().includes(q))); }, [approvals, search]);
+
+  const handleCreate = async (request) => { setSubmitting(true); setPageError(''); setActionMessage(''); try { await createApproval(request); setFormOpen(false); setActionMessage(`Approval saved successfully for application #${request.applicationId}.`); await loadData(); } catch (error) { setPageError(getApiErrorMessage(error, 'Unable to save approval.')); } finally { setSubmitting(false); } };
+  const handleUpdate = async (approval, status) => { if (status === approval.status) return; if (!window.confirm(`Change approval #${approval.id} to ${status}? This also changes the application status in the backend.`)) return; setUpdatingId(approval.id); setPageError(''); setActionMessage(''); try { await updateApproval(approval.id, { applicationId: approval.applicationId, approvedById: approval.approvedById, status, approvedAmount: approval.approvedAmount, remarks: approval.remarks ?? null }); setActionMessage(`Approval #${approval.id} updated successfully.`); await loadData(); } catch (error) { setPageError(getApiErrorMessage(error, 'Unable to update approval.')); } finally { setUpdatingId(null); } };
+
+  return <div className="module-page"><div className="module-page-header"><div><span className="eyebrow">APPROVAL MANAGEMENT</span><h1>Approval</h1><p>Review verified applications and record the district approval decision.</p></div>{canManage && !formOpen && <button type="button" className="btn-primary header-action-button" onClick={() => { setActionMessage(''); setPageError(''); setFormOpen(true); }}>+ New Approval</button>}</div>
+    {actionMessage && <div className="success-banner">{actionMessage}</div>}{pageError && <div className="form-error module-error" role="alert">{pageError}<button type="button" className="error-dismiss" onClick={() => setPageError('')} aria-label="Dismiss error">×</button></div>}
+    {formOpen && <ApprovalForm applications={pendingApplications} userId={userId} onSubmit={handleCreate} onCancel={() => !submitting && setFormOpen(false)} submitting={submitting} />}
+    <section className="verification-queue-card"><div className="queue-summary"><div><span className="eyebrow">READY FOR ACTION</span><strong>{pendingApplications.length}</strong><span>verified application{pendingApplications.length === 1 ? '' : 's'} awaiting approval</span></div><p>Only applications with backend status <strong>VERIFIED</strong> and no existing approval record are offered for a new approval.</p></div></section>
+    <section className="verification-list-card"><div className="section-heading verification-list-heading"><div><h2>Approval Records</h2><p>{approvals.length} record{approvals.length === 1 ? '' : 's'} found</p></div><div className="scheme-search"><label htmlFor="approval-search">Search approvals</label><input id="approval-search" type="search" placeholder="Search ID, application, status…" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>{loading ? <div className="loading-state">Loading approval records...</div> : <ApprovalTable approvals={filteredApprovals} updatingId={updatingId} onUpdate={handleUpdate} />}</section>
+    <p className="workflow-note"><strong>Workflow:</strong> VERIFIED → APPROVED or REJECTED. Approved applications proceed to the finance-controlled disbursement stage.</p>
+  </div>;
+}
